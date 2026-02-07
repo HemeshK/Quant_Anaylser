@@ -1,0 +1,16 @@
+langchain
+langchain-community
+langchain-chroma
+langchain-core
+langgraph
+pypdf
+chromadb
+yfinance
+pandas
+numpy
+scikit-learn
+langchainhub
+langchain-groq
+langchain-huggingface
+sentence-transformers
+python-dotenv
