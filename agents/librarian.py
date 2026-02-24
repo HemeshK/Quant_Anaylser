@@ -1,20 +1,41 @@
 import os
 from langchain_groq import ChatGroq
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain.tools.retriever import create_retriever_tool
-from langchain_core.prompts import PromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.prebuilt import create_react_agent
+from langchain_core.tools.retriever import create_retriever_tool
 from dotenv import load_dotenv
-
 load_dotenv()
+
+LIBRARIAN_SYSTEM_PROMPT = """You are a Quantitative Research Librarian. Your goal is to extract technical details from a PDF.
+
+CRITICAL RULES:
+1. If a search result is repetitive or unhelpful, CHANGE your search query to be more specific (e.g., search for 'formula' or 'equation').
+2. Do not search for multiple concepts at once. Break them down.
+3. You must provide a final answer that includes the PCA methodology, alpha factors, and ETF logic.
+4. If you get the same Figure or Section twice, use a different search term.
+5. Search for the 'Introduction' or 'Conclusion' first to get the high-level logic."""
+
 
 class LibrarianAgent:
     def __init__(self, vector_engine):
-        self.llm = ChatGroq(
+        # 1. Primary Model: Groq Llama 3.3
+        self.primary_llm = ChatGroq(
             temperature=0,
-            model_name="llama-3.3-70b-versatile", # Good choice for speed/cost
+            model_name="llama-3.3-70b-versatile",
             groq_api_key=os.getenv("GROQ_API_KEY")
         )
-        
+
+        # 2. Fallback Model: Gemini 3 Flash
+        self.fallback_llm = ChatGoogleGenerativeAI(
+            model="gemini-3-flash",
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            temperature=0
+        )
+
+        # 3. Create a resilient LLM
+        # This wrapper automatically handles switching if the primary fails
+        self.llm = self.primary_llm.with_fallbacks([self.fallback_llm])
+
         retriever = vector_engine.get_retriever()
         self.tool = create_retriever_tool(
             retriever,
@@ -24,40 +45,18 @@ class LibrarianAgent:
         self.tools = [self.tool]
 
     def get_executor(self):
-        # Custom ReAct prompt to stop the hallucination loop
-        template = """You are a Quantitative Research Librarian. Your goal is to extract technical details from a PDF.
-        
-        CRITICAL RULES:
-        1. If a search result is repetitive or unhelpful, CHANGE your search query to be more specific (e.g., search for 'formula' or 'equation').
-        2. Do not search for multiple concepts at once. Break them down.
-        3. You must provide a final answer that includes the PCA methodology, alpha factors, and ETF logic.
+        """Return a compiled agent graph (CompiledStateGraph).
 
-        TOOLS:
-        ------
-        You have access to the following tools:
-        {tools}
-
-        To use a tool, please use the following format:
-        Thought: Do I need to use a tool? Yes
-        Action: the action to take, should be one of [{tool_names}]
-        Action Input: the input to the action
-        Observation: the result of the action
-
-        When you have a response for the user, or if you cannot find more info:
-        Thought: Do I need to use a tool? No
-        Final Answer: [your detailed summary here]
-
-        Begin!
-
-        Question: {input}
-        Thought: {agent_scratchpad}"""
-
-        prompt = PromptTemplate.from_template(template)
-        agent = create_react_agent(self.llm, self.tools, prompt)
-        return AgentExecutor(
-            agent=agent, 
-            tools=self.tools, 
-            verbose=True, 
-            handle_parsing_errors=True,
-            max_iterations=10 # Prevents infinite loops
+        The graph accepts ``{"messages": [HumanMessage(...)]}`` as input and
+        returns a dict with a ``"messages"`` key containing the conversation.
+        """
+        # create_agent returns a CompiledStateGraph directly.
+        # system_prompt must be a plain string (or SystemMessage), not a
+        # PromptTemplate.
+        agent_graph = create_react_agent(
+            self.llm,
+            tools=self.tools,
+            prompt=LIBRARIAN_SYSTEM_PROMPT,
         )
+
+        return agent_graph

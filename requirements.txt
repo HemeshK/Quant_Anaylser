@@ -12,5 +12,6 @@ scikit-learn
 langchainhub
 langchain-groq
 langchain-huggingface
+langchain-google-genai
 sentence-transformers
 python-dotenv

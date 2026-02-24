@@ -44,4 +44,11 @@ class VectorEngine:
             embedding_function=self.embeddings,
             collection_name=self.collection_name
         )
-        return vector_store.as_retriever(search_kwargs={"k": 5})
+        return vector_store.as_retriever(
+            search_type="mmr", 
+            search_kwargs={
+                'k': 5, 
+                'fetch_k': 20, 
+                'lambda_mult': 0.25  # More diversity, less repetition
+            }
+        )

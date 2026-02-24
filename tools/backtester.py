@@ -4,21 +4,26 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 
 class PCABacktester:
-    def __init__(self, n_components=5):
-        self.n_components = n_components
+    def __init__(self, spec=None):
+        # Extract parameters from the agent's JSON spec, with defaults
+        self.spec = spec or {}
+        params = self.spec.get("strategy", {}).get("parameters", {})
+        
+        # Dynamically set PCA factors and rolling window
+        self.n_components = params.get("num_factors") or params.get("pca_factors") or 5
+        self.window = params.get("window") or 20 
+        
         self.pca = PCA(n_components=self.n_components)
 
     def calculate_residuals(self, returns_df):
-        # 1. Standardize the returns
+        """Decomposes returns based on the dynamic n_components."""
         mu = returns_df.mean()
         std = returns_df.std()
         norm_returns = (returns_df - mu) / std
 
-        # 2. Fit PCA
         self.pca.fit(norm_returns)
         factors = self.pca.transform(norm_returns) 
 
-        # FIXED: Ensure pd is defined here
         residuals = pd.DataFrame(index=returns_df.index, columns=returns_df.columns)
 
         for stock in returns_df.columns:
@@ -30,6 +35,7 @@ class PCABacktester:
         return residuals
 
     def compute_signals(self, residuals):
-        # Rolling 20-day Z-Score logic
-        z_scores = (residuals - residuals.rolling(20).mean()) / residuals.rolling(20).std()
+        """Calculates Z-Scores using the dynamic window from the spec."""
+        # Uses the window (e.g., 20) provided by the Strategist
+        z_scores = (residuals - residuals.rolling(self.window).mean()) / residuals.rolling(self.window).std()
         return z_scores
